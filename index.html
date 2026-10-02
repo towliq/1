@@ -7,7 +7,7 @@
   <meta name="description" content="Nova — личные заметки и планер">
   <title>Nova — личное пространство</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=20261003-apple">
+  <link rel="stylesheet" href="styles.css?v=20261003-scopefix">
 </head>
 <body>
   <div class="app-shell">
@@ -65,6 +65,6 @@
   <div class="modal-backdrop hidden" id="task-modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title"><form class="modal-card task-modal-card" id="task-form"><div class="modal-top"><span class="modal-kicker" id="task-modal-kicker">НОВАЯ ЗАДАЧА</span><button class="modal-close" type="button" data-action="close-task" aria-label="Закрыть">×</button></div><h2 id="task-modal-title">Добавить в планер</h2><input id="task-title" class="modal-input" type="text" placeholder="Что нужно сделать?" autocomplete="off"><div class="task-fields"><label><span>Дата</span><input id="task-date" class="modal-input" type="date"></label><label><span>Время</span><input id="task-time" class="modal-input" type="time"></label></div><div class="modal-settings"><span>Видимость</span><div class="scope-switch compact-scope"><button type="button" class="scope-button active" data-modal-scope="personal">Только мне</button><button type="button" class="scope-button" data-modal-scope="shared">Общая</button></div></div><div class="modal-bottom"><button type="button" class="danger-action hidden" data-action="delete-task">Удалить</button><button class="primary-action" type="submit">Сохранить</button></div></form></div>
   <div class="modal-backdrop hidden" id="user-modal" role="dialog" aria-modal="true" aria-labelledby="user-modal-title"><div class="modal-card user-modal-card"><div class="modal-top"><span class="modal-kicker">ПРОФИЛИ</span><button class="modal-close" type="button" data-action="close-users" aria-label="Закрыть">×</button></div><h2 id="user-modal-title">Кто сейчас пишет?</h2><p class="modal-help">Логин и пароль не нужны. Выберите профиль, чтобы разделить личные записи.</p><div class="user-list" id="user-list"></div><div class="add-user-row"><input id="new-user-name" class="modal-input" type="text" placeholder="Имя пользователя"><button class="primary-action" type="button" data-action="add-user">Добавить</button></div></div></div>
   <div class="toast" id="toast" role="status"></div>
-  <script src="app.js?v=20261003-apple"></script>
+  <script src="app.js?v=20261003-scopefix"></script>
 </body>
 </html>

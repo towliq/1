@@ -297,10 +297,18 @@ function closeUserModal() { $('#user-modal').classList.add('hidden'); }
 function chooseUser(id) { if (!state.users.some(user => user.id === id)) return; state.activeUserId = id; sessionStorage.setItem('nova-user-picked', '1'); saveState(); closeUserModal(); renderAll(); showToast(`Сейчас пишет ${activeUser().name}`); }
 function addUser() { const input = $('#new-user-name'); const name = input.value.trim(); if (!name) { showToast('Введите имя пользователя'); input.focus(); return; } const colors = ['#1677ff', '#f3973e', '#8068da', '#28b65b', '#d85e7b']; const user = { id: `user-${Date.now()}`, name, color: colors[state.users.length % colors.length] }; state.users.push(user); state.activeUserId = user.id; saveState(); input.value = ''; closeUserModal(); renderAll(); showToast(`Профиль ${name} добавлен`); }
 
+function scopeContext(button) { return button.closest('#notes-view') ? 'notes' : button.closest('#planner-view') ? 'planner' : 'overview'; }
+function bindScopeButtons() {
+  $$('[data-scope]').forEach(button => button.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    applyWorkspaceScope(button.dataset.scope, scopeContext(button));
+  }));
+}
+
 document.addEventListener('click', event => {
   const view = event.target.closest('[data-view]')?.dataset.view; const actionNode = event.target.closest('[data-action]'); const action = actionNode?.dataset.action; const taskId = event.target.closest('[data-task-id]')?.dataset.taskId; const noteId = event.target.closest('[data-note-id]')?.dataset.noteId; const userId = event.target.closest('[data-user-id]')?.dataset.userId;
   if (view) { if (view === 'notes') activeCollection = ''; switchView(view); }
-  if (event.target.closest('[data-scope]')) { const button = event.target.closest('[data-scope]'); const context = button.closest('#notes-view') ? 'notes' : button.closest('#planner-view') ? 'planner' : 'overview'; applyWorkspaceScope(button.dataset.scope, context); return; }
   if (event.target.closest('[data-modal-scope]')) { modalScope = event.target.closest('[data-modal-scope]').dataset.modalScope; const modal = event.target.closest('.modal-card'); modal.querySelectorAll('[data-modal-scope]').forEach(button => button.classList.toggle('active', button.dataset.modalScope === modalScope)); return; }
   if (userId) { chooseUser(userId); return; }
   if (event.target.closest('[data-calendar-date]')) { selectedDateKey = event.target.closest('[data-calendar-date]').dataset.calendarDate; renderPlanner(); return; }
@@ -342,6 +350,7 @@ document.addEventListener('keydown', event => { if ((event.metaKey || event.ctrl
 document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click', event => { if (event.target === backdrop) { if (backdrop.id === 'note-modal') closeNoteEditor(); else if (backdrop.id === 'task-modal') closeTaskEditor(); else closeUserModal(); } }));
 $('#new-user-name').addEventListener('keydown', event => { if (event.key === 'Enter') addUser(); });
 
+bindScopeButtons();
 document.body.classList.toggle('dark', state.theme === 'dark'); renderAll();
 if (state.users.length > 1 && !sessionStorage.getItem('nova-user-picked')) setTimeout(openUserModal, 180);
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});

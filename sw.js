@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nova-shell-v4';
+const CACHE_NAME = 'nova-shell-v5';
 const APP_SHELL = ['./', './index.html', './styles.css', './app.js', './manifest.json'];
 
 self.addEventListener('install', event => {
