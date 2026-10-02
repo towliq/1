@@ -17,6 +17,7 @@ let editingTaskId = null;
 let selectedDateKey = dateKey(new Date());
 let calendarCursor = new Date();
 let calendarMode = 'month';
+let activeCollection = '';
 let toastTimer;
 
 function $(selector) { return document.querySelector(selector); }
@@ -110,7 +111,7 @@ function renderTasks() {
 function noteCard(note) {
   const author = recordScope(note) === 'shared' ? `<span class="note-author">${escapeHtml(userName(note.authorId))}</span>` : '';
   return `<article class="note-card ${note.color || colorForTag(note.tag)}" data-note-id="${note.id}">
-    <div class="note-card-head"><span class="note-tag">${tagLabel(note.tag)}</span><span class="note-card-author">${author}</span><button class="favorite-button ${note.favorite ? 'active' : ''}" data-action="toggle-favorite" data-note-id="${note.id}" aria-label="${note.favorite ? 'Убрать из избранного' : 'Добавить в избранное'}">${note.favorite ? '★' : '☆'}</button></div>
+    <div class="note-card-head"><span class="note-tag">${tagLabel(note.tag)}</span><span class="note-card-collection">${escapeHtml(note.collection || '')}</span><span class="note-card-author">${author}</span><button class="favorite-button ${note.favorite ? 'active' : ''}" data-action="toggle-favorite" data-note-id="${note.id}" aria-label="${note.favorite ? 'Убрать из избранного' : 'Добавить в избранное'}">${note.favorite ? '★' : '☆'}</button></div>
     <h3>${escapeHtml(note.title || 'Без названия')}</h3><p>${escapeHtml(note.body || '')}</p><footer><span>${escapeHtml(note.dateLabel || formatShortDate(new Date(note.updatedAt || Date.now())))}</span><button class="note-edit" data-action="edit-note" data-note-id="${note.id}" aria-label="Редактировать заметку" title="Редактировать заметку">↗</button></footer>
   </article>`;
 }
@@ -119,14 +120,15 @@ function recentRow(note) { const author = recordScope(note) === 'shared' ? ` · 
 
 function renderNotes() {
   const query = (searchQuery || $('#notes-search')?.value || '').trim().toLowerCase();
-  const filtered = visibleNotes(notesScope).filter(note => { const matchesQuery = !query || `${note.title} ${note.body} ${userName(note.authorId)}`.toLowerCase().includes(query); const matchesFilter = activeFilter === 'all' || (activeFilter === 'favorite' ? note.favorite : note.tag === activeFilter); return matchesQuery && matchesFilter; }).sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+  const filtered = visibleNotes(notesScope).filter(note => { const matchesQuery = !query || `${note.title} ${note.body} ${userName(note.authorId)} ${note.collection || ''}`.toLowerCase().includes(query); const matchesFilter = activeFilter === 'all' || (activeFilter === 'favorite' ? note.favorite : note.tag === activeFilter); const matchesCollection = !activeCollection || note.collection === activeCollection; return matchesQuery && matchesFilter && matchesCollection; }).sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
   $('#notes-grid').innerHTML = filtered.map(noteCard).join('');
   $('#notes-grid').classList.toggle('hidden', filtered.length === 0);
   $('#notes-empty').classList.toggle('hidden', filtered.length > 0);
   const allVisible = visibleNotes(notesScope);
-  $('#notes-meta').textContent = allVisible.length ? `${allVisible.length} ${plural(allVisible.length, 'заметка', 'заметки', 'заметок')}` : '0 заметок';
+  $('#notes-title').textContent = activeCollection ? activeCollection : 'Заметки';
+  $('#notes-meta').textContent = allVisible.length ? `${allVisible.length} ${plural(allVisible.length, 'заметка', 'заметки', 'заметок')}${activeCollection ? ` · подборка «${activeCollection}»` : ''}` : (activeCollection ? `Подборка «${activeCollection}» пуста` : '0 заметок');
   $('#notes-view').querySelector('.empty-state h2').textContent = allVisible.length && (query || activeFilter !== 'all') ? 'Ничего не найдено' : 'Пока пусто';
-  $('#notes-view').querySelector('.empty-state p').textContent = allVisible.length && (query || activeFilter !== 'all') ? 'Попробуйте изменить запрос или фильтр.' : (notesScope === 'shared' ? 'Общих заметок пока нет.' : 'Создайте первую заметку — она появится здесь.');
+  $('#notes-view').querySelector('.empty-state p').textContent = allVisible.length && (query || activeFilter !== 'all') ? 'Попробуйте изменить запрос или фильтр.' : activeCollection ? 'Добавьте заметку и выберите эту подборку в карточке.' : (notesScope === 'shared' ? 'Общих заметок пока нет.' : 'Создайте первую заметку — она появится здесь.');
   const recent = visibleNotes(overviewScope).slice().sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)).slice(0, 4);
   $('#recent-list').innerHTML = recent.map(recentRow).join('');
   $('#recent-list').classList.toggle('hidden', recent.length === 0);
@@ -136,8 +138,52 @@ function renderNotes() {
 
 function renderCollections() {
   const collections = state.collections || [];
-  $('#collections').innerHTML = collections.map(item => `<button class="index-item collection-item" data-collection="${escapeHtml(item)}"><span class="collection-dot"></span><span>${escapeHtml(item)}</span></button>`).join('');
+  $('#collections').innerHTML = collections.map(item => `<div class="collection-row"><button class="index-item collection-item ${item === activeCollection ? 'active' : ''}" data-collection="${escapeHtml(item)}" title="Открыть подборку"><span class="collection-dot"></span><span>${escapeHtml(item)}</span><b>${state.notes.filter(note => note.collection === item).length || ''}</b></button><button class="collection-action" data-collection-action="rename" data-collection-name="${escapeHtml(item)}" aria-label="Переименовать подборку ${escapeHtml(item)}" title="Переименовать">↗</button><button class="collection-action" data-collection-action="delete" data-collection-name="${escapeHtml(item)}" aria-label="Удалить подборку ${escapeHtml(item)}" title="Удалить">×</button></div>`).join('');
   $('#collections-empty').classList.toggle('hidden', collections.length > 0);
+}
+
+function renderCollectionSelect(selected = '') {
+  const select = $('#note-collection');
+  if (!select) return;
+  select.innerHTML = `<option value="">Без подборки</option>${(state.collections || []).map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('')}`;
+  select.value = selected || '';
+}
+
+function createCollection() {
+  const name = prompt('Название подборки');
+  const cleanName = name?.trim();
+  if (!cleanName) return;
+  if ((state.collections || []).some(item => item.toLowerCase() === cleanName.toLowerCase())) { showToast('Такая подборка уже есть'); return; }
+  state.collections.push(cleanName);
+  saveState();
+  renderCollections();
+  openCollection(cleanName);
+  showToast(`Подборка «${cleanName}» создана`);
+}
+
+function openCollection(name) {
+  activeCollection = state.collections.includes(name) ? name : '';
+  switchView('notes');
+  renderCollections();
+  renderNotes();
+}
+
+function editCollection(name) {
+  const next = prompt('Новое название подборки', name)?.trim();
+  if (!next || next === name) return;
+  if ((state.collections || []).some(item => item !== name && item.toLowerCase() === next.toLowerCase())) { showToast('Такая подборка уже есть'); return; }
+  state.collections = state.collections.map(item => item === name ? next : item);
+  state.notes.forEach(note => { if (note.collection === name) note.collection = next; });
+  if (activeCollection === name) activeCollection = next;
+  saveState(); renderCollections(); renderNotes(); showToast('Подборка переименована');
+}
+
+function deleteCollection(name) {
+  if (!confirm(`Удалить подборку «${name}»? Заметки останутся без подборки.`)) return;
+  state.collections = state.collections.filter(item => item !== name);
+  state.notes.forEach(note => { if (note.collection === name) note.collection = ''; });
+  if (activeCollection === name) activeCollection = '';
+  saveState(); renderCollections(); renderNotes(); showToast('Подборка удалена');
 }
 
 function renderPlanner() {
@@ -194,10 +240,10 @@ function switchView(view) {
 function openNoteEditor(id = null) {
   editingNoteId = id; const note = state.notes.find(item => String(item.id) === String(id));
   modalScope = note ? recordScope(note) : (currentView === 'notes' ? notesScope : overviewScope);
-  $('#note-modal').classList.remove('hidden'); $('#note-modal-kicker').textContent = note ? 'РЕДАКТИРОВАНИЕ' : 'НОВАЯ ЗАМЕТКА'; $('#note-modal-title').textContent = note ? 'Изменить заметку' : 'Сохранить мысль'; $('#note-title').value = note?.title || ''; $('#note-body').value = note?.body || ''; selectedTag = note?.tag || 'personal'; $$('.tag-selector').forEach(button => button.classList.toggle('active', button.dataset.tag === selectedTag)); $$('#note-modal [data-modal-scope]').forEach(button => button.classList.toggle('active', button.dataset.modalScope === modalScope)); $('[data-action="delete-note"]').classList.toggle('hidden', !note); $('#note-title').focus();
+  renderCollectionSelect(note?.collection || activeCollection); $('#note-modal').classList.remove('hidden'); $('#note-modal-kicker').textContent = note ? 'РЕДАКТИРОВАНИЕ' : 'НОВАЯ ЗАМЕТКА'; $('#note-modal-title').textContent = note ? 'Изменить заметку' : 'Сохранить мысль'; $('#note-title').value = note?.title || ''; $('#note-body').value = note?.body || ''; selectedTag = note?.tag || 'personal'; $$('.tag-selector').forEach(button => button.classList.toggle('active', button.dataset.tag === selectedTag)); $$('#note-modal [data-modal-scope]').forEach(button => button.classList.toggle('active', button.dataset.modalScope === modalScope)); $('[data-action="delete-note"]').classList.toggle('hidden', !note); $('#note-title').focus();
 }
 function closeNoteEditor() { $('#note-modal').classList.add('hidden'); editingNoteId = null; $('#note-title').value = ''; $('#note-body').value = ''; }
-function saveNote(event) { event.preventDefault(); const title = $('#note-title').value.trim(); const body = $('#note-body').value.trim(); if (!title && !body) { showToast('Добавьте заголовок или текст'); return; } const now = Date.now(); const nextScope = modalScope === 'shared' ? 'shared' : 'personal'; if (editingNoteId) { const note = state.notes.find(item => String(item.id) === String(editingNoteId)); if (note) { note.title = title || 'Без названия'; note.body = body; note.tag = selectedTag; note.scope = nextScope; note.authorId = nextScope === 'shared' ? recordAuthorId(note, state.activeUserId) : state.activeUserId; note.color = colorForTag(selectedTag); note.updatedAt = now; note.dateLabel = 'Только что'; } showToast('Заметка обновлена'); } else { state.notes.unshift({ id: now, title: title || 'Без названия', body, tag: selectedTag, scope: nextScope, authorId: state.activeUserId, color: colorForTag(selectedTag), favorite: false, updatedAt: now, dateLabel: 'Только что' }); showToast(nextScope === 'shared' ? 'Общая заметка сохранена' : 'Заметка сохранена'); } saveState(); closeNoteEditor(); renderAll(); }
+function saveNote(event) { event.preventDefault(); const title = $('#note-title').value.trim(); const body = $('#note-body').value.trim(); if (!title && !body) { showToast('Добавьте заголовок или текст'); return; } const now = Date.now(); const nextScope = modalScope === 'shared' ? 'shared' : 'personal'; const collection = $('#note-collection')?.value || ''; if (editingNoteId) { const note = state.notes.find(item => String(item.id) === String(editingNoteId)); if (note) { note.title = title || 'Без названия'; note.body = body; note.tag = selectedTag; note.scope = nextScope; note.collection = collection; note.authorId = nextScope === 'shared' ? recordAuthorId(note, state.activeUserId) : state.activeUserId; note.color = colorForTag(selectedTag); note.updatedAt = now; note.dateLabel = 'Только что'; } showToast('Заметка обновлена'); } else { state.notes.unshift({ id: now, title: title || 'Без названия', body, tag: selectedTag, scope: nextScope, collection, authorId: state.activeUserId, color: colorForTag(selectedTag), favorite: false, updatedAt: now, dateLabel: 'Только что' }); showToast(nextScope === 'shared' ? 'Общая заметка сохранена' : 'Заметка сохранена'); } saveState(); closeNoteEditor(); renderAll(); }
 function deleteNote() { if (!editingNoteId || !confirm('Удалить эту заметку?')) return; state.notes = state.notes.filter(item => String(item.id) !== String(editingNoteId)); saveState(); closeNoteEditor(); renderAll(); showToast('Заметка удалена'); }
 function toggleFavorite(id) { const note = state.notes.find(item => String(item.id) === String(id)); if (!note) return; note.favorite = !note.favorite; note.updatedAt = Date.now(); saveState(); renderNotes(); showToast(note.favorite ? 'Добавлено в избранное' : 'Убрано из избранного'); }
 
@@ -221,7 +267,7 @@ function addUser() { const input = $('#new-user-name'); const name = input.value
 
 document.addEventListener('click', event => {
   const view = event.target.closest('[data-view]')?.dataset.view; const actionNode = event.target.closest('[data-action]'); const action = actionNode?.dataset.action; const taskId = event.target.closest('[data-task-id]')?.dataset.taskId; const noteId = event.target.closest('[data-note-id]')?.dataset.noteId; const userId = event.target.closest('[data-user-id]')?.dataset.userId;
-  if (view) switchView(view);
+  if (view) { if (view === 'notes') activeCollection = ''; switchView(view); }
   if (event.target.closest('[data-scope]')) { const button = event.target.closest('[data-scope]'); const scope = setWorkspaceScope(button.dataset.scope); const context = button.closest('#notes-view') ? 'notes' : button.closest('#planner-view') ? 'planner' : 'overview'; if (context === 'notes') { activeFilter = 'all'; $$('#notes-view .segment[data-filter]').forEach(item => item.classList.toggle('active', item.dataset.filter === 'all')); } setScopeButtons(scope, 'overview'); setScopeButtons(scope, 'notes'); setScopeButtons(scope, 'planner'); renderShell(); renderTasks(); renderNotes(); renderPlanner(); return; }
   if (event.target.closest('[data-modal-scope]')) { modalScope = event.target.closest('[data-modal-scope]').dataset.modalScope; const modal = event.target.closest('.modal-card'); modal.querySelectorAll('[data-modal-scope]').forEach(button => button.classList.toggle('active', button.dataset.modalScope === modalScope)); return; }
   if (userId) { chooseUser(userId); return; }
@@ -247,10 +293,13 @@ document.addEventListener('click', event => {
   if (action === 'search') openSearch();
   if (action === 'toggle-theme') setTheme();
   if (action === 'sync-now') { $('#sync-state span').textContent = 'Проверяю…'; setTimeout(() => { $('#sync-state span').textContent = state.notes.length || state.tasks.length ? 'На устройстве' : 'Локально'; showToast('Синхронизация ещё не подключена'); }, 650); }
-  if (action === 'add-project') { const name = prompt('Название подборки'); if (name?.trim()) { state.collections.push(name.trim()); saveState(); renderCollections(); showToast('Подборка добавлена'); } }
+  if (action === 'add-project') createCollection();
   if (action === 'profile-menu') openUserModal();
   if (action === 'close-users') closeUserModal();
   if (action === 'add-user') addUser();
+  const collectionAction = event.target.closest('[data-collection-action]');
+  if (collectionAction) { const name = collectionAction.dataset.collectionName; if (collectionAction.dataset.collectionAction === 'rename') editCollection(name); else deleteCollection(name); return; }
+  if (event.target.closest('[data-collection]')) { openCollection(event.target.closest('[data-collection]').dataset.collection); return; }
 });
 
 $('#note-form').addEventListener('submit', saveNote); $('#task-form').addEventListener('submit', saveTask);
