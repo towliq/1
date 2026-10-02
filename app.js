@@ -21,13 +21,20 @@ let toastTimer;
 
 function $(selector) { return document.querySelector(selector); }
 function $$(selector) { return [...document.querySelectorAll(selector)]; }
+function normalizeScope(record = {}) {
+  const raw = record.scope ?? record.visibility ?? record.shared ?? record.isShared;
+  if (raw === true || raw === 'shared' || raw === 'common' || raw === 'общая' || raw === 'общее') return 'shared';
+  return 'personal';
+}
+function recordScope(record) { return normalizeScope(record); }
+function recordAuthorId(record, fallback) { return record.authorId || record.userId || record.createdBy || fallback; }
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
     const users = Array.isArray(saved.users) && saved.users.length ? saved.users : blankState.users;
     const activeUserId = users.some(user => user.id === saved.activeUserId) ? saved.activeUserId : users[0].id;
-    const notes = Array.isArray(saved.notes) ? saved.notes.map(note => ({ ...note, authorId: note.authorId || activeUserId, scope: note.scope || 'personal' })) : [];
-    const tasks = Array.isArray(saved.tasks) ? saved.tasks.map(task => ({ ...task, authorId: task.authorId || activeUserId, scope: task.scope || 'personal' })) : [];
+    const notes = Array.isArray(saved.notes) ? saved.notes.map(note => ({ ...note, authorId: recordAuthorId(note, activeUserId), scope: normalizeScope(note) })) : [];
+    const tasks = Array.isArray(saved.tasks) ? saved.tasks.map(task => ({ ...task, authorId: recordAuthorId(task, activeUserId), scope: normalizeScope(task) })) : [];
     return { ...blankState, ...saved, users, activeUserId, notes, tasks, collections: Array.isArray(saved.collections) ? saved.collections : [] };
   } catch { return { ...blankState }; }
 }
@@ -45,8 +52,19 @@ function plural(n, one, few, many) { const m = n % 100; if (m >= 11 && m <= 14) 
 function activeUser() { return state.users.find(user => user.id === state.activeUserId) || state.users[0]; }
 function userName(id) { return state.users.find(user => user.id === id)?.name || 'Неизвестный'; }
 function initials(name) { return String(name || '?').trim().split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase(); }
-function visibleNotes(scope = notesScope) { return state.notes.filter(note => scope === 'shared' ? note.scope === 'shared' : note.scope !== 'shared' && note.authorId === state.activeUserId); }
-function visibleTasks(scope = plannerScope) { return state.tasks.filter(task => scope === 'shared' ? task.scope === 'shared' : task.scope !== 'shared' && task.authorId === state.activeUserId); }
+function visibleRecords(records, scope) {
+  const targetScope = scope === 'shared' ? 'shared' : 'personal';
+  return records.filter(record => recordScope(record) === targetScope && (targetScope === 'shared' || recordAuthorId(record, '') === state.activeUserId));
+}
+function visibleNotes(scope = notesScope) { return visibleRecords(state.notes, scope); }
+function visibleTasks(scope = plannerScope) { return visibleRecords(state.tasks, scope); }
+function setWorkspaceScope(scope) {
+  const nextScope = scope === 'shared' ? 'shared' : 'personal';
+  overviewScope = nextScope;
+  notesScope = nextScope;
+  plannerScope = nextScope;
+  return nextScope;
+}
 function setScopeButtons(scope, context) { const root = context === 'notes' ? '#notes-view' : context === 'planner' ? '#planner-view' : '#overview-view'; $(`${root} .scope-button`).forEach(button => button.classList.toggle('active', button.dataset.scope === scope)); }
 
 function renderShell() {
@@ -90,14 +108,14 @@ function renderTasks() {
 }
 
 function noteCard(note) {
-  const author = note.scope === 'shared' ? `<span class="note-author">${escapeHtml(userName(note.authorId))}</span>` : '';
+  const author = recordScope(note) === 'shared' ? `<span class="note-author">${escapeHtml(userName(note.authorId))}</span>` : '';
   return `<article class="note-card ${note.color || colorForTag(note.tag)}" data-note-id="${note.id}">
     <div class="note-card-head"><span class="note-tag">${tagLabel(note.tag)}</span><span class="note-card-author">${author}</span><button class="favorite-button ${note.favorite ? 'active' : ''}" data-action="toggle-favorite" data-note-id="${note.id}" aria-label="${note.favorite ? 'Убрать из избранного' : 'Добавить в избранное'}">${note.favorite ? '★' : '☆'}</button></div>
     <h3>${escapeHtml(note.title || 'Без названия')}</h3><p>${escapeHtml(note.body || '')}</p><footer><span>${escapeHtml(note.dateLabel || formatShortDate(new Date(note.updatedAt || Date.now())))}</span><button class="note-edit" data-action="edit-note" data-note-id="${note.id}" aria-label="Редактировать заметку" title="Редактировать заметку">↗</button></footer>
   </article>`;
 }
 
-function recentRow(note) { const author = note.scope === 'shared' ? ` · ${userName(note.authorId)}` : ''; return `<button class="recent-row" data-action="edit-note" data-note-id="${note.id}"><span class="recent-mark ${note.color || colorForTag(note.tag)}"></span><span class="recent-copy"><strong>${escapeHtml(note.title || 'Без названия')}</strong><small>${escapeHtml(note.body || '')}</small></span><span class="recent-date">${escapeHtml(note.dateLabel || formatShortDate(new Date(note.updatedAt || Date.now())))}${escapeHtml(author)}</span></button>`; }
+function recentRow(note) { const author = recordScope(note) === 'shared' ? ` · ${userName(note.authorId)}` : ''; return `<button class="recent-row" data-action="edit-note" data-note-id="${note.id}"><span class="recent-mark ${note.color || colorForTag(note.tag)}"></span><span class="recent-copy"><strong>${escapeHtml(note.title || 'Без названия')}</strong><small>${escapeHtml(note.body || '')}</small></span><span class="recent-date">${escapeHtml(note.dateLabel || formatShortDate(new Date(note.updatedAt || Date.now())))}${escapeHtml(author)}</span></button>`; }
 
 function renderNotes() {
   const query = (searchQuery || $('#notes-search')?.value || '').trim().toLowerCase();
@@ -175,18 +193,18 @@ function switchView(view) {
 
 function openNoteEditor(id = null) {
   editingNoteId = id; const note = state.notes.find(item => String(item.id) === String(id));
-  modalScope = note?.scope || (currentView === 'notes' ? notesScope : overviewScope);
+  modalScope = note ? recordScope(note) : (currentView === 'notes' ? notesScope : overviewScope);
   $('#note-modal').classList.remove('hidden'); $('#note-modal-kicker').textContent = note ? 'РЕДАКТИРОВАНИЕ' : 'НОВАЯ ЗАМЕТКА'; $('#note-modal-title').textContent = note ? 'Изменить заметку' : 'Сохранить мысль'; $('#note-title').value = note?.title || ''; $('#note-body').value = note?.body || ''; selectedTag = note?.tag || 'personal'; $$('.tag-selector').forEach(button => button.classList.toggle('active', button.dataset.tag === selectedTag)); $$('#note-modal [data-modal-scope]').forEach(button => button.classList.toggle('active', button.dataset.modalScope === modalScope)); $('[data-action="delete-note"]').classList.toggle('hidden', !note); $('#note-title').focus();
 }
 function closeNoteEditor() { $('#note-modal').classList.add('hidden'); editingNoteId = null; $('#note-title').value = ''; $('#note-body').value = ''; }
-function saveNote(event) { event.preventDefault(); const title = $('#note-title').value.trim(); const body = $('#note-body').value.trim(); if (!title && !body) { showToast('Добавьте заголовок или текст'); return; } const now = Date.now(); if (editingNoteId) { const note = state.notes.find(item => String(item.id) === String(editingNoteId)); if (note) { note.title = title || 'Без названия'; note.body = body; note.tag = selectedTag; note.scope = modalScope; note.authorId = note.authorId || state.activeUserId; note.color = colorForTag(selectedTag); note.updatedAt = now; note.dateLabel = 'Только что'; } showToast('Заметка обновлена'); } else { state.notes.unshift({ id: now, title: title || 'Без названия', body, tag: selectedTag, scope: modalScope, authorId: state.activeUserId, color: colorForTag(selectedTag), favorite: false, updatedAt: now, dateLabel: 'Только что' }); showToast(modalScope === 'shared' ? 'Общая заметка сохранена' : 'Заметка сохранена'); } saveState(); closeNoteEditor(); renderAll(); }
+function saveNote(event) { event.preventDefault(); const title = $('#note-title').value.trim(); const body = $('#note-body').value.trim(); if (!title && !body) { showToast('Добавьте заголовок или текст'); return; } const now = Date.now(); const nextScope = modalScope === 'shared' ? 'shared' : 'personal'; if (editingNoteId) { const note = state.notes.find(item => String(item.id) === String(editingNoteId)); if (note) { note.title = title || 'Без названия'; note.body = body; note.tag = selectedTag; note.scope = nextScope; note.authorId = nextScope === 'shared' ? recordAuthorId(note, state.activeUserId) : state.activeUserId; note.color = colorForTag(selectedTag); note.updatedAt = now; note.dateLabel = 'Только что'; } showToast('Заметка обновлена'); } else { state.notes.unshift({ id: now, title: title || 'Без названия', body, tag: selectedTag, scope: nextScope, authorId: state.activeUserId, color: colorForTag(selectedTag), favorite: false, updatedAt: now, dateLabel: 'Только что' }); showToast(nextScope === 'shared' ? 'Общая заметка сохранена' : 'Заметка сохранена'); } saveState(); closeNoteEditor(); renderAll(); }
 function deleteNote() { if (!editingNoteId || !confirm('Удалить эту заметку?')) return; state.notes = state.notes.filter(item => String(item.id) !== String(editingNoteId)); saveState(); closeNoteEditor(); renderAll(); showToast('Заметка удалена'); }
 function toggleFavorite(id) { const note = state.notes.find(item => String(item.id) === String(id)); if (!note) return; note.favorite = !note.favorite; note.updatedAt = Date.now(); saveState(); renderNotes(); showToast(note.favorite ? 'Добавлено в избранное' : 'Убрано из избранного'); }
 
 function openTaskEditor(id = null) {
-  editingTaskId = id; const task = state.tasks.find(item => String(item.id) === String(id)); modalScope = task?.scope || plannerScope; $('#task-modal').classList.remove('hidden'); $('#task-modal-kicker').textContent = task ? 'РЕДАКТИРОВАНИЕ' : 'НОВАЯ ЗАДАЧА'; $('#task-modal-title').textContent = task ? 'Изменить задачу' : 'Добавить в планер'; $('#task-title').value = task?.title || ''; $('#task-date').value = task?.dateKey || selectedDateKey; $('#task-time').value = task?.time || ''; $$('#task-modal [data-modal-scope]').forEach(button => button.classList.toggle('active', button.dataset.modalScope === modalScope)); $('[data-action="delete-task"]').classList.toggle('hidden', !task); $('#task-title').focus(); }
+  editingTaskId = id; const task = state.tasks.find(item => String(item.id) === String(id)); modalScope = task ? recordScope(task) : plannerScope; $('#task-modal').classList.remove('hidden'); $('#task-modal-kicker').textContent = task ? 'РЕДАКТИРОВАНИЕ' : 'НОВАЯ ЗАДАЧА'; $('#task-modal-title').textContent = task ? 'Изменить задачу' : 'Добавить в планер'; $('#task-title').value = task?.title || ''; $('#task-date').value = task?.dateKey || selectedDateKey; $('#task-time').value = task?.time || ''; $$('#task-modal [data-modal-scope]').forEach(button => button.classList.toggle('active', button.dataset.modalScope === modalScope)); $('[data-action="delete-task"]').classList.toggle('hidden', !task); $('#task-title').focus(); }
 function closeTaskEditor() { $('#task-modal').classList.add('hidden'); editingTaskId = null; }
-function saveTask(event) { event.preventDefault(); const title = $('#task-title').value.trim(); if (!title) { showToast('Введите название задачи'); return; } const payload = { title, dateKey: $('#task-date').value || todayKey(), time: $('#task-time').value || '', scope: modalScope }; if (editingTaskId) { const task = state.tasks.find(item => String(item.id) === String(editingTaskId)); if (task) Object.assign(task, payload); showToast('Задача обновлена'); } else { state.tasks.push({ id: Date.now(), ...payload, authorId: state.activeUserId, done: false }); showToast(modalScope === 'shared' ? 'Общая задача добавлена' : 'Задача добавлена'); } selectedDateKey = payload.dateKey; calendarCursor = dateFromKey(selectedDateKey); saveState(); closeTaskEditor(); renderAll(); }
+function saveTask(event) { event.preventDefault(); const title = $('#task-title').value.trim(); if (!title) { showToast('Введите название задачи'); return; } const nextScope = modalScope === 'shared' ? 'shared' : 'personal'; const payload = { title, dateKey: $('#task-date').value || todayKey(), time: $('#task-time').value || '', scope: nextScope }; if (editingTaskId) { const task = state.tasks.find(item => String(item.id) === String(editingTaskId)); if (task) Object.assign(task, payload, { authorId: nextScope === 'shared' ? recordAuthorId(task, state.activeUserId) : state.activeUserId }); showToast('Задача обновлена'); } else { state.tasks.push({ id: Date.now(), ...payload, authorId: state.activeUserId, done: false }); showToast(nextScope === 'shared' ? 'Общая задача добавлена' : 'Задача добавлена'); } selectedDateKey = payload.dateKey; calendarCursor = dateFromKey(selectedDateKey); saveState(); closeTaskEditor(); renderAll(); }
 function deleteTask() { if (!editingTaskId || !confirm('Удалить эту задачу?')) return; state.tasks = state.tasks.filter(item => String(item.id) !== String(editingTaskId)); saveState(); closeTaskEditor(); renderAll(); showToast('Задача удалена'); }
 function toggleTask(id) { const task = state.tasks.find(item => String(item.id) === String(id)); if (!task) return; task.done = !task.done; saveState(); renderAll(); }
 
@@ -204,7 +222,7 @@ function addUser() { const input = $('#new-user-name'); const name = input.value
 document.addEventListener('click', event => {
   const view = event.target.closest('[data-view]')?.dataset.view; const actionNode = event.target.closest('[data-action]'); const action = actionNode?.dataset.action; const taskId = event.target.closest('[data-task-id]')?.dataset.taskId; const noteId = event.target.closest('[data-note-id]')?.dataset.noteId; const userId = event.target.closest('[data-user-id]')?.dataset.userId;
   if (view) switchView(view);
-  if (event.target.closest('[data-scope]')) { const button = event.target.closest('[data-scope]'); const scope = button.dataset.scope; const context = button.closest('#notes-view') ? 'notes' : button.closest('#planner-view') ? 'planner' : 'overview'; if (context === 'notes') notesScope = scope; else if (context === 'planner') plannerScope = scope; else overviewScope = scope; setScopeButtons(scope, context); renderShell(); renderTasks(); renderNotes(); renderPlanner(); return; }
+  if (event.target.closest('[data-scope]')) { const button = event.target.closest('[data-scope]'); const scope = setWorkspaceScope(button.dataset.scope); const context = button.closest('#notes-view') ? 'notes' : button.closest('#planner-view') ? 'planner' : 'overview'; if (context === 'notes') { activeFilter = 'all'; $$('#notes-view .segment[data-filter]').forEach(item => item.classList.toggle('active', item.dataset.filter === 'all')); } setScopeButtons(scope, 'overview'); setScopeButtons(scope, 'notes'); setScopeButtons(scope, 'planner'); renderShell(); renderTasks(); renderNotes(); renderPlanner(); return; }
   if (event.target.closest('[data-modal-scope]')) { modalScope = event.target.closest('[data-modal-scope]').dataset.modalScope; const modal = event.target.closest('.modal-card'); modal.querySelectorAll('[data-modal-scope]').forEach(button => button.classList.toggle('active', button.dataset.modalScope === modalScope)); return; }
   if (userId) { chooseUser(userId); return; }
   if (event.target.closest('[data-calendar-date]')) { selectedDateKey = event.target.closest('[data-calendar-date]').dataset.calendarDate; renderPlanner(); return; }
