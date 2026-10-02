@@ -119,6 +119,7 @@ function noteCard(note) {
 function recentRow(note) { const author = recordScope(note) === 'shared' ? ` · ${userName(note.authorId)}` : ''; return `<button class="recent-row" data-action="edit-note" data-note-id="${note.id}"><span class="recent-mark ${note.color || colorForTag(note.tag)}"></span><span class="recent-copy"><strong>${escapeHtml(note.title || 'Без названия')}</strong><small>${escapeHtml(note.body || '')}</small></span><span class="recent-date">${escapeHtml(note.dateLabel || formatShortDate(new Date(note.updatedAt || Date.now())))}${escapeHtml(author)}</span></button>`; }
 
 function renderNotes() {
+  renderCollectionFilter();
   const query = (searchQuery || $('#notes-search')?.value || '').trim().toLowerCase();
   const filtered = visibleNotes(notesScope).filter(note => { const matchesQuery = !query || `${note.title} ${note.body} ${userName(note.authorId)} ${note.collection || ''}`.toLowerCase().includes(query); const matchesFilter = activeFilter === 'all' || (activeFilter === 'favorite' ? note.favorite : note.tag === activeFilter); const matchesCollection = !activeCollection || note.collection === activeCollection; return matchesQuery && matchesFilter && matchesCollection; }).sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
   $('#notes-grid').innerHTML = filtered.map(noteCard).join('');
@@ -147,6 +148,13 @@ function renderCollectionSelect(selected = '') {
   if (!select) return;
   select.innerHTML = `<option value="">Без подборки</option>${(state.collections || []).map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('')}`;
   select.value = selected || '';
+}
+
+function renderCollectionFilter() {
+  const select = $('#collection-filter');
+  if (!select) return;
+  select.innerHTML = `<option value="">Все подборки</option>${(state.collections || []).map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('')}`;
+  select.value = activeCollection || '';
 }
 
 function createCollection() {
@@ -304,6 +312,7 @@ document.addEventListener('click', event => {
 
 $('#note-form').addEventListener('submit', saveNote); $('#task-form').addEventListener('submit', saveTask);
 $('#notes-search').addEventListener('input', event => { searchQuery = event.target.value; renderNotes(); });
+$('#collection-filter').addEventListener('change', event => { activeCollection = event.target.value; renderCollections(); renderNotes(); });
 $('#global-search').addEventListener('input', event => { searchQuery = event.target.value; switchView('notes'); $('#notes-search').value = searchQuery; renderNotes(); });
 document.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#global-search').focus(); } if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') { event.preventDefault(); openNoteEditor(); } if (event.key === 'Escape') { closeNoteEditor(); closeTaskEditor(); closeUserModal(); } });
 document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click', event => { if (event.target === backdrop) { if (backdrop.id === 'note-modal') closeNoteEditor(); else if (backdrop.id === 'task-modal') closeTaskEditor(); else closeUserModal(); } }));
