@@ -7,9 +7,10 @@ let state = loadState();
 let currentView = 'overview';
 let selectedTag = 'personal';
 let activeFilter = 'all';
-let overviewScope = 'personal';
-let notesScope = 'personal';
-let plannerScope = 'personal';
+const initialWorkspaceScope = sessionStorage.getItem('nova-workspace-scope') === 'shared' ? 'shared' : 'personal';
+let overviewScope = initialWorkspaceScope;
+let notesScope = initialWorkspaceScope;
+let plannerScope = initialWorkspaceScope;
 let modalScope = 'personal';
 let searchQuery = '';
 let editingNoteId = null;
@@ -66,9 +67,11 @@ function setWorkspaceScope(scope) {
   plannerScope = nextScope;
   return nextScope;
 }
-function setScopeButtons(scope, context) { const root = context === 'notes' ? '#notes-view' : context === 'planner' ? '#planner-view' : '#overview-view'; $(`${root} .scope-button`).forEach(button => { const active = button.dataset.scope === scope; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); }); }
+function setScopeButtons(scope, context) { const root = context === 'notes' ? '#notes-view' : context === 'planner' ? '#planner-view' : '#overview-view'; const rootNode = $(root); if (rootNode) rootNode.dataset.scope = scope; $(`${root} .scope-button[data-scope]`).forEach(button => { const active = button.dataset.scope === scope; button.classList.toggle('active', active); button.toggleAttribute('data-selected', active); button.setAttribute('aria-pressed', String(active)); }); }
+function syncScopeUI() { const scope = notesScope; $$('[data-scope]').forEach(button => { const active = button.dataset.scope === scope; button.classList.toggle('active', active); button.toggleAttribute('data-selected', active); button.setAttribute('aria-pressed', String(active)); }); }
 function applyWorkspaceScope(scope, context = 'overview') {
   const nextScope = setWorkspaceScope(scope);
+  sessionStorage.setItem('nova-workspace-scope', nextScope);
   if (context === 'notes') {
     activeFilter = 'all';
     $$('#notes-view .segment[data-filter]').forEach(item => item.classList.toggle('active', item.dataset.filter === 'all'));
@@ -99,15 +102,16 @@ function renderShell() {
   $('#user-avatar').style.background = user.color || '';
   $('#sync-state').classList.toggle('has-data', Boolean(state.notes.length || state.tasks.length));
   $('#sync-state span').textContent = state.notes.length || state.tasks.length ? `Пишет ${user.name}` : 'Локально';
-  setScopeButtons(overviewScope, 'overview'); setScopeButtons(notesScope, 'notes'); setScopeButtons(plannerScope, 'planner');
+  setScopeButtons(overviewScope, 'overview'); setScopeButtons(notesScope, 'notes'); setScopeButtons(plannerScope, 'planner'); syncScopeUI();
   renderCollections();
 }
 
 function taskRow(task, compact = false) {
-  const author = task.scope === 'shared' ? ` · ${userName(task.authorId)}` : '';
+  const author = recordScope(task) === 'shared' ? ` · ${userName(task.authorId)}` : '';
+  const visibility = recordScope(task) === 'shared' ? 'Общее' : 'Только мне';
   return `<div class="task-row ${task.done ? 'done' : ''} ${compact ? 'compact-task' : ''}" data-task-id="${task.id}">
     <button class="task-check ${task.done ? 'done' : ''}" data-action="toggle-task" data-task-id="${task.id}" aria-label="${task.done ? 'Вернуть задачу' : 'Завершить задачу'}"></button>
-    <span class="task-row-main"><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(formatTime(task.time))}${escapeHtml(author)}</small></span>
+    <span class="task-row-main"><strong>${escapeHtml(task.title)}</strong><small><span class="task-visibility ${recordScope(task) === 'shared' ? 'shared' : ''}">${visibility}</span> · ${escapeHtml(formatTime(task.time))}${escapeHtml(author)}</small></span>
     <button class="task-edit" data-action="edit-task" data-task-id="${task.id}" aria-label="Редактировать задачу" title="Редактировать задачу">•••</button>
   </div>`;
 }
@@ -125,8 +129,9 @@ function renderTasks() {
 
 function noteCard(note) {
   const author = recordScope(note) === 'shared' ? `<span class="note-author">${escapeHtml(userName(note.authorId))}</span>` : '';
+  const visibility = recordScope(note) === 'shared' ? 'Общее' : 'Только мне';
   return `<article class="note-card ${note.color || colorForTag(note.tag)}" data-note-id="${note.id}">
-    <div class="note-card-head"><span class="note-tag">${tagLabel(note.tag)}</span><span class="note-card-collection">${escapeHtml(note.collection || '')}</span><span class="note-card-author">${author}</span><button class="favorite-button ${note.favorite ? 'active' : ''}" data-action="toggle-favorite" data-note-id="${note.id}" aria-label="${note.favorite ? 'Убрать из избранного' : 'Добавить в избранное'}">${note.favorite ? '★' : '☆'}</button></div>
+    <div class="note-card-head"><span class="note-tag">${tagLabel(note.tag)}</span><span class="note-visibility ${recordScope(note) === 'shared' ? 'shared' : ''}">${visibility}${author ? ` · ${author}` : ''}</span><span class="note-card-collection">${escapeHtml(note.collection || '')}</span><button class="favorite-button ${note.favorite ? 'active' : ''}" data-action="toggle-favorite" data-note-id="${note.id}" aria-label="${note.favorite ? 'Убрать из избранного' : 'Добавить в избранное'}">${note.favorite ? '★' : '☆'}</button></div>
     <h3>${escapeHtml(note.title || 'Без названия')}</h3><p>${escapeHtml(note.body || '')}</p><footer><span>${escapeHtml(note.dateLabel || formatShortDate(new Date(note.updatedAt || Date.now())))}</span><button class="note-edit" data-action="edit-note" data-note-id="${note.id}" aria-label="Редактировать заметку" title="Редактировать заметку">↗</button></footer>
   </article>`;
 }
@@ -143,8 +148,11 @@ function renderNotes() {
   const allVisible = visibleNotes(notesScope);
   $('#notes-title').textContent = activeCollection ? activeCollection : (notesScope === 'shared' ? 'Общие заметки' : 'Заметки');
   $('#notes-meta').textContent = allVisible.length ? `${notesScope === 'shared' ? 'Общее пространство · ' : ''}${allVisible.length} ${plural(allVisible.length, 'заметка', 'заметки', 'заметок')}${activeCollection ? ` · подборка «${activeCollection}»` : ''}` : (activeCollection ? `Подборка «${activeCollection}» пуста` : notesScope === 'shared' ? 'Общих заметок пока нет' : '0 заметок');
-  $('#notes-view').querySelector('.empty-state h2').textContent = allVisible.length && (query || activeFilter !== 'all') ? 'Ничего не найдено' : 'Пока пусто';
-  $('#notes-view').querySelector('.empty-state p').textContent = allVisible.length && (query || activeFilter !== 'all') ? 'Попробуйте изменить запрос или фильтр.' : activeCollection ? 'Добавьте заметку и выберите эту подборку в карточке.' : (notesScope === 'shared' ? 'Общих заметок пока нет.' : 'Создайте первую заметку — она появится здесь.');
+  const emptyTitle = allVisible.length && (query || activeFilter !== 'all') ? 'Ничего не найдено' : activeCollection ? `Подборка «${activeCollection}» пуста` : notesScope === 'shared' ? 'Общих заметок пока нет' : 'Пока пусто';
+  const emptyCopy = allVisible.length && (query || activeFilter !== 'all') ? 'Попробуйте изменить запрос или фильтр.' : activeCollection ? 'Создайте заметку и выберите эту подборку.' : (notesScope === 'shared' ? 'Создайте первую заметку с видимостью «Общая».' : 'Создайте первую заметку — она появится здесь.');
+  $('#notes-view').querySelector('.empty-state h2').textContent = emptyTitle;
+  $('#notes-view').querySelector('.empty-state p').textContent = emptyCopy;
+  $('#notes-view').querySelector('.empty-state .primary-action').innerHTML = `<span>+</span> ${notesScope === 'shared' ? 'Создать общую заметку' : 'Создать заметку'}`;
   const recent = visibleNotes(overviewScope).slice().sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)).slice(0, 4);
   $('#recent-list').innerHTML = recent.map(recentRow).join('');
   $('#recent-list').classList.toggle('hidden', recent.length === 0);
@@ -214,7 +222,8 @@ function renderPlanner() {
   $('#month-label').textContent = `${monthNames[cursor.getMonth()]} ${cursor.getFullYear()}`;
   const plannerTasks = visibleTasks(plannerScope);
   const plannerNotes = visibleNotes(notesScope);
-  $('#planner-meta').textContent = `${plannerTasks.length} ${plural(plannerTasks.length, 'задача', 'задачи', 'задач')} · ${plannerNotes.length} ${plural(plannerNotes.length, 'заметка', 'заметки', 'заметок')}`;
+  $('#planner-title').textContent = plannerScope === 'shared' ? 'Общий планер' : 'Календарь';
+  $('#planner-meta').textContent = `${plannerScope === 'shared' ? 'Общее пространство · ' : ''}${plannerTasks.length} ${plural(plannerTasks.length, 'задача', 'задачи', 'задач')} · ${plannerNotes.length} ${plural(plannerNotes.length, 'заметка', 'заметки', 'заметок')}`;
   const calendar = $('#planner-calendar');
   calendar.classList.toggle('week-mode', calendarMode === 'week');
   if (calendarMode === 'week') renderWeekCalendar(calendar); else renderMonthCalendar(calendar, cursor);

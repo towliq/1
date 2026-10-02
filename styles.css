@@ -131,6 +131,9 @@ body.dark .mobile-nav { background: rgba(28,28,30,.92); border-color: var(--line
 .note-card-head { gap: 7px; }
 .note-card-collection { overflow: hidden; min-width: 0; margin-left: auto; color: var(--blue); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .note-card-collection:empty { display: none; }
+.note-visibility { color:var(--faint); font-size:9px; white-space:nowrap; }
+.note-visibility.shared, .task-visibility.shared { color:var(--blue); }
+.task-visibility { color:var(--faint); font-size:10px; }
 @media (max-width: 650px) { .collection-field { align-items:flex-start; flex-direction:column; gap:7px; } .collection-field .modal-input { width:100%; } }
 
 /* Apple design pass: calm materials, clear hierarchy, and immediate touch feedback. */
@@ -238,3 +241,5 @@ body.dark .modal-input, body.dark .modal-textarea { background:#171a20; color:va
   button:active { transform:none; }
   .view.active, .modal-card, .note-card, .task-row, .recent-row { animation:none !important; transition:opacity .18s ease, background-color .18s ease !important; transform:none !important; }
 }
+#overview-view[data-scope="shared"] .scope-button[data-scope="shared"], #notes-view[data-scope="shared"] .scope-button[data-scope="shared"], #planner-view[data-scope="shared"] .scope-button[data-scope="shared"], #overview-view[data-scope="personal"] .scope-button[data-scope="personal"], #notes-view[data-scope="personal"] .scope-button[data-scope="personal"], #planner-view[data-scope="personal"] .scope-button[data-scope="personal"] { background:var(--blue) !important; color:#fff !important; box-shadow:0 3px 10px rgba(0,122,255,.24); }
+#overview-view[data-scope="shared"] .scope-button[data-scope="personal"], #notes-view[data-scope="shared"] .scope-button[data-scope="personal"], #planner-view[data-scope="shared"] .scope-button[data-scope="personal"], #overview-view[data-scope="personal"] .scope-button[data-scope="shared"], #notes-view[data-scope="personal"] .scope-button[data-scope="shared"], #planner-view[data-scope="personal"] .scope-button[data-scope="shared"] { background:transparent !important; color:var(--muted) !important; box-shadow:none; }
