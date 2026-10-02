@@ -66,7 +66,22 @@ function setWorkspaceScope(scope) {
   plannerScope = nextScope;
   return nextScope;
 }
-function setScopeButtons(scope, context) { const root = context === 'notes' ? '#notes-view' : context === 'planner' ? '#planner-view' : '#overview-view'; $(`${root} .scope-button`).forEach(button => button.classList.toggle('active', button.dataset.scope === scope)); }
+function setScopeButtons(scope, context) { const root = context === 'notes' ? '#notes-view' : context === 'planner' ? '#planner-view' : '#overview-view'; $(`${root} .scope-button`).forEach(button => { const active = button.dataset.scope === scope; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); }); }
+function applyWorkspaceScope(scope, context = 'overview') {
+  const nextScope = setWorkspaceScope(scope);
+  if (context === 'notes') {
+    activeFilter = 'all';
+    $$('#notes-view .segment[data-filter]').forEach(item => item.classList.toggle('active', item.dataset.filter === 'all'));
+  }
+  setScopeButtons(nextScope, 'overview');
+  setScopeButtons(nextScope, 'notes');
+  setScopeButtons(nextScope, 'planner');
+  renderShell();
+  renderTasks();
+  renderNotes();
+  renderPlanner();
+  showToast(nextScope === 'shared' ? 'Открыто общее пространство' : 'Открыто личное пространство');
+}
 
 function renderShell() {
   const now = new Date();
@@ -126,8 +141,8 @@ function renderNotes() {
   $('#notes-grid').classList.toggle('hidden', filtered.length === 0);
   $('#notes-empty').classList.toggle('hidden', filtered.length > 0);
   const allVisible = visibleNotes(notesScope);
-  $('#notes-title').textContent = activeCollection ? activeCollection : 'Заметки';
-  $('#notes-meta').textContent = allVisible.length ? `${allVisible.length} ${plural(allVisible.length, 'заметка', 'заметки', 'заметок')}${activeCollection ? ` · подборка «${activeCollection}»` : ''}` : (activeCollection ? `Подборка «${activeCollection}» пуста` : '0 заметок');
+  $('#notes-title').textContent = activeCollection ? activeCollection : (notesScope === 'shared' ? 'Общие заметки' : 'Заметки');
+  $('#notes-meta').textContent = allVisible.length ? `${notesScope === 'shared' ? 'Общее пространство · ' : ''}${allVisible.length} ${plural(allVisible.length, 'заметка', 'заметки', 'заметок')}${activeCollection ? ` · подборка «${activeCollection}»` : ''}` : (activeCollection ? `Подборка «${activeCollection}» пуста` : notesScope === 'shared' ? 'Общих заметок пока нет' : '0 заметок');
   $('#notes-view').querySelector('.empty-state h2').textContent = allVisible.length && (query || activeFilter !== 'all') ? 'Ничего не найдено' : 'Пока пусто';
   $('#notes-view').querySelector('.empty-state p').textContent = allVisible.length && (query || activeFilter !== 'all') ? 'Попробуйте изменить запрос или фильтр.' : activeCollection ? 'Добавьте заметку и выберите эту подборку в карточке.' : (notesScope === 'shared' ? 'Общих заметок пока нет.' : 'Создайте первую заметку — она появится здесь.');
   const recent = visibleNotes(overviewScope).slice().sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)).slice(0, 4);
@@ -276,7 +291,7 @@ function addUser() { const input = $('#new-user-name'); const name = input.value
 document.addEventListener('click', event => {
   const view = event.target.closest('[data-view]')?.dataset.view; const actionNode = event.target.closest('[data-action]'); const action = actionNode?.dataset.action; const taskId = event.target.closest('[data-task-id]')?.dataset.taskId; const noteId = event.target.closest('[data-note-id]')?.dataset.noteId; const userId = event.target.closest('[data-user-id]')?.dataset.userId;
   if (view) { if (view === 'notes') activeCollection = ''; switchView(view); }
-  if (event.target.closest('[data-scope]')) { const button = event.target.closest('[data-scope]'); const scope = setWorkspaceScope(button.dataset.scope); const context = button.closest('#notes-view') ? 'notes' : button.closest('#planner-view') ? 'planner' : 'overview'; if (context === 'notes') { activeFilter = 'all'; $$('#notes-view .segment[data-filter]').forEach(item => item.classList.toggle('active', item.dataset.filter === 'all')); } setScopeButtons(scope, 'overview'); setScopeButtons(scope, 'notes'); setScopeButtons(scope, 'planner'); renderShell(); renderTasks(); renderNotes(); renderPlanner(); return; }
+  if (event.target.closest('[data-scope]')) { const button = event.target.closest('[data-scope]'); const context = button.closest('#notes-view') ? 'notes' : button.closest('#planner-view') ? 'planner' : 'overview'; applyWorkspaceScope(button.dataset.scope, context); return; }
   if (event.target.closest('[data-modal-scope]')) { modalScope = event.target.closest('[data-modal-scope]').dataset.modalScope; const modal = event.target.closest('.modal-card'); modal.querySelectorAll('[data-modal-scope]').forEach(button => button.classList.toggle('active', button.dataset.modalScope === modalScope)); return; }
   if (userId) { chooseUser(userId); return; }
   if (event.target.closest('[data-calendar-date]')) { selectedDateKey = event.target.closest('[data-calendar-date]').dataset.calendarDate; renderPlanner(); return; }
